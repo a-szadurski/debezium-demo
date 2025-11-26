@@ -30,6 +30,9 @@ public class DebeziumConnectorConfig {
 //        .with("database.include.list", "source") // default empty
         .with("snapshot.delay.ms", "100")
         .with("errors.log.include.messages", "true")
+//        .with("skipped.operations", "u,d,t")
+        .with("database.include.list", "inventory")
+        .with("collection.include.list", "inventory.outbox")
         .build();
   }
 }

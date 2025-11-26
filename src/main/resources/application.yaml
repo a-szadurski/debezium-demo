@@ -3,4 +3,4 @@ spring:
     web-application-type: none
   data:
     mongodb:
-      uri: mongodb://admin:password@localhost:27017/central_outbox?authSource=admin
+      uri: mongodb://admin:password@localhost:27017/central_outbox_db?authSource=admin
