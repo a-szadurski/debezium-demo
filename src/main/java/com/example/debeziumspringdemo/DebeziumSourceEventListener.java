@@ -1,5 +1,6 @@
 package com.example.debeziumspringdemo;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,61 +44,55 @@ public class DebeziumSourceEventListener {
 
     for (ChangeEvent<String, String> event : events) {
       String sourceRecordValue = event.value();
-      CentralOutboxRecord outboxRecord = readOutboxRecord(sourceRecordValue);
 
-      committer.markProcessed(event);
+      try {
+        readOutboxRecord(sourceRecordValue);
 
+        committer.markProcessed(event);
+      } catch (Exception e) {
+        log.error("Error processing record: {}", sourceRecordValue, e);
+        //save to some fallback table/topic, also catch any errors&handle
+        //does fallback error require stopping the server?
+        committer.markProcessed(event);
+      }
     }
     committer.markBatchFinished();
   }
 
-  private void handleChangeEvent(ChangeEvent<String, String> sourceRecordChangeEvent) {
+  private void readOutboxRecord(String sourceRecordValue) throws Exception {
+    String aggregatetype = "";
+    String aggregateid = "";
+    String payload = "";
+    JsonNode root = objectMapper.readTree(sourceRecordValue);
+    JsonNode debeziumPayload = root.path("payload");
 
-    String sourceRecordValue = sourceRecordChangeEvent.value();
+    JsonNode source = debeziumPayload.path("source");
 
-    readOutboxRecord(sourceRecordValue);
+    String db = source.path("db").asText();
+    String collection = source.path("collection").asText();
 
-  }
+    log.info("DB = '{}', collection = '{}'", db, collection);
+    String after = debeziumPayload.path("after").asText(null);
+    log.info("after = {}", after);
+    JsonNode afterJson = objectMapper.readTree(after);
+    aggregatetype = afterJson.path("aggregatetype").asText(null);
+    aggregateid = afterJson.path("aggregateid").asText(null);
+    JsonNode payloadJson = afterJson.path("payload");
+    payload = payloadJson.toString();
 
-  private CentralOutboxRecord readOutboxRecord(String sourceRecordValue) {
-    String aggregatetype;
-    String aggregateid;
-    String payload;
-    CentralOutboxRecord outboxRecord = null;
-    try {
-      JsonNode root = objectMapper.readTree(sourceRecordValue);
-      JsonNode debeziumPayload = root.path("payload");
+    final CentralOutboxRecord outboxRecord = CentralOutboxRecord.builder()
+        .aggregateType(aggregatetype)
+        .aggregateId(aggregateid)
+        .payload(payload)
+        .build();
 
-      JsonNode source = debeziumPayload.path("source");
-
-      String db = source.path("db").asText();
-      String collection = source.path("collection").asText();
-
-      log.info("DB = '{}', collection = '{}'", db, collection);
-      String after = debeziumPayload.path("after").asText(null);
-      log.info("after = {}", after);
-      JsonNode afterJson = objectMapper.readTree(after);
-      aggregatetype = afterJson.path("aggregatetype").asText(null);
-      aggregateid = afterJson.path("aggregateid").asText(null);
-      JsonNode payloadJson = afterJson.path("payload");
-      payload = payloadJson.toString();
-
-      outboxRecord = CentralOutboxRecord.builder()
-          .aggregateType(aggregatetype)
-          .aggregateId(aggregateid)
-          .payload(payload)
-          .build();
-
-      log.info("value = '{}'", sourceRecordValue);
-      log.info("outboxRecord = '{}'", outboxRecord);
-      if (outboxRecord != null && outboxRecord.getAggregateType() != null) {
-        centralOutboxPersister.save(outboxRecord);
-      }
-
-    } catch (IOException e) {
-      // handle parse error
+    log.info("value = '{}'", sourceRecordValue);
+    log.info("outboxRecord = '{}'", outboxRecord);
+    if (outboxRecord != null && outboxRecord.getAggregateType() != null) {
+      centralOutboxPersister.save(outboxRecord);
+    } else {
+      throw new Exception("Unable to save outbox record");
     }
-    return outboxRecord;
   }
 
   @PostConstruct
