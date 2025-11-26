@@ -1,0 +1,16 @@
+{
+  "_id": {
+    "$oid": "6926fe93b6ef279f0dbd65cb"
+  },
+  "aggregatetype": "orderTopicdvads",
+  "aggregateid": "54325",
+  "type": "OrderCreated",
+  "payload": {
+    "orderId": "54321",
+    "customerId": "888",
+    "amount": 299.99
+  },
+  "timestamp": {
+    "$date": 1764163219986
+  }
+}
