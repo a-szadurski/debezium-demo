@@ -16,7 +16,7 @@ public class DebeziumConnectorConfig {
 
     return Configuration.create()
         // engine properties
-        .with("name", "sbd-mongodb")
+        .with("name", "sbd-mongodb-2")
         .with("connector.class", "io.debezium.connector.mongodb.MongoDbConnector")
         .with("offset.storage", "org.apache.kafka.connect.storage.FileOffsetBackingStore")
         .with("offset.storage.file.filename", offsetStorageTempFile.getAbsolutePath())
@@ -30,10 +30,10 @@ public class DebeziumConnectorConfig {
 //        .with("database.include.list", "source") // default empty
         .with("snapshot.delay.ms", "100")
         .with("errors.log.include.messages", "true")
-//        .with("skipped.operations", "u,d,t")
-        .with("filters.match.mode", "literal")
-        .with("database.include.list", "inventory")
-        .with("collection.include.list", "inventory.outbox")
+        .with("skipped.operations", "u,d,t")
+//        .with("filters.match.mode", "literal")
+        .with("database.include.list", "test")
+        .with("collection.include.list", "test.outbox")
         .build();
   }
 }
