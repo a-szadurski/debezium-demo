@@ -7,13 +7,13 @@ import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
 import io.debezium.engine.format.Json;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
+import java.util.Set;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,6 @@ public class DebeziumSourceEventListener {
   private final DebeziumEngine<ChangeEvent<String, String>> debeziumEngine;
   private final CentralOutboxPersister centralOutboxPersister;
   private final ObjectMapper objectMapper;
-  private final ExecutorService virtualThreadPerTaskExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public DebeziumSourceEventListener(Configuration mongodbConnector, CentralOutboxPersister centralOutboxPersister) {
     this.centralOutboxPersister = centralOutboxPersister;
@@ -35,6 +34,12 @@ public class DebeziumSourceEventListener {
     this.debeziumEngine = DebeziumEngine.create(Json.class)
         .using(mongodbConnector.asProperties())
         .notifying(this::handleBatchSafely)
+        .using((success, message, error) -> {
+          log.info("Debezium engine completed. success={} message={}", success, message);
+          if (error != null) {
+            log.error("Debezium engine error", error);
+          }
+        })
         .build();
     objectMapper = new ObjectMapper();
     objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -45,11 +50,13 @@ public class DebeziumSourceEventListener {
       DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
   ) throws InterruptedException {
 
+    List<CentralOutboxRecord> outboxRecords = new LinkedList<>();
+
     for (ChangeEvent<String, String> event : events) {
       String sourceRecordValue = event.value();
 
       try {
-        readOutboxRecord(sourceRecordValue);
+        outboxRecords.add(readOutboxRecord(sourceRecordValue));
 
         committer.markProcessed(event);
       } catch (Exception e) {
@@ -59,10 +66,11 @@ public class DebeziumSourceEventListener {
         committer.markProcessed(event);
       }
     }
+    centralOutboxPersister.saveAll(outboxRecords);
     committer.markBatchFinished();
   }
 
-  private void readOutboxRecord(String sourceRecordValue) throws Exception {
+  private CentralOutboxRecord readOutboxRecord(String sourceRecordValue) throws Exception {
     var root = objectMapper.readTree(sourceRecordValue);
     var debeziumPayload = root.path("payload");
     var source = debeziumPayload.path("source");
@@ -83,15 +91,16 @@ public class DebeziumSourceEventListener {
         .aggregateType(aggregatetype)
         .aggregateId(aggregateid)
         .payload(payload)
+        .timestamp(Instant.now())
         .build();
 
     log.info("value = '{}'", sourceRecordValue);
     log.info("outboxRecord = '{}'", outboxRecord);
-    if (outboxRecord != null && outboxRecord.getAggregateType() != null) {
-      centralOutboxPersister.save(outboxRecord);
-    } else {
-      throw new Exception("Unable to save outbox record");
-    }
+//    if (outboxRecord != null && outboxRecord.getAggregateType() != null) {
+      return outboxRecord;
+//    } else {
+//      throw new Exception("Unable to save outbox record");
+//    }
   }
 
   @PostConstruct
@@ -103,59 +112,103 @@ public class DebeziumSourceEventListener {
   private void stop() throws IOException {
     if (debeziumEngine != null) {
       debeziumEngine.close();
-      virtualThreadPerTaskExecutor.shutdown();
+    }
+  }
+
+  //AI example for handling mongo errors with batch save
+  private void handleBatchSafelyExampleForMongoErrors(
+      List<ChangeEvent<String, String>> events,
+      DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
+  ) throws InterruptedException {
+
+    List<CentralOutboxRecord> outboxRecords = new LinkedList<>();
+    // only events that we actually want to commit if saveAll succeeds
+    List<ChangeEvent<String, String>> successfullyParsedEvents = new LinkedList<>();
+
+    for (ChangeEvent<String, String> event : events) {
+      String sourceRecordValue = event.value();
+
+      try {
+        CentralOutboxRecord record = readOutboxRecord(sourceRecordValue);
+        outboxRecords.add(record);
+        successfullyParsedEvents.add(event);
+      } catch (Exception e) {
+        log.error("Error processing record: {}", sourceRecordValue, e);
+        // here you can send to DLQ/fallback and *optionally* mark this one processed
+        // so it doesn't poison the stream forever:
+        // dlqProducer.send(...);
+        committer.markProcessed(event);
+      }
+    }
+
+    try {
+      // this is your side-effect: if this fails, we DO NOT advance offsets for the good events
+      if (!outboxRecords.isEmpty()) {
+        centralOutboxPersister.saveAll(outboxRecords);
+      }
+
+      // only after saveAll succeeds, we acknowledge those events
+      for (ChangeEvent<String, String> event : successfullyParsedEvents) {
+        committer.markProcessed(event);
+      }
+      committer.markBatchFinished();
+    } catch (Exception e) {
+      log.error("Failed to persist batch, leaving offsets uncommitted so batch can be retried", e);
+      // Important: do NOT call markProcessed / markBatchFinished here.
+      // Debezium will not advance the committed offsets for these events.
+      // You may want retry/backoff logic or let the engine be restarted.
     }
   }
 
 
   //todo AI suggestion - check this
-  private void handleBatchSafelyExample(
-      List<ChangeEvent<String, String>> events,
-      DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
-  ) throws InterruptedException {
-
-    // One task per event, each on its own virtual thread
-    List<Future<Boolean>> futures = new ArrayList<>(events.size());
-
-    for (ChangeEvent<String, String> event : events) {
-      String sourceRecordValue = event.value();
-
-      Future<Boolean> future = virtualThreadPerTaskExecutor.submit(() -> {
-        try {
-          // your existing logic
-          readOutboxRecord(sourceRecordValue);
-          return true;  // success
-        } catch (Exception e) {
-          // keep your logging behaviour
-          log.error("Error processing record: {}", sourceRecordValue, e);
-          //optional DLQ publish here
-          return false; // failure, but we will still commit
-        }
-      });
-
-      futures.add(future);
-    }
-
-    // Wait for all tasks to finish on the Debezium thread
-    for (int i = 0; i < events.size(); i++) {
-      ChangeEvent<String, String> event = events.get(i);
-      Future<Boolean> future = futures.get(i);
-
-      try {
-        // blocks on the virtual thread finishing
-        future.get();
-      } catch (ExecutionException e) {
-        // shouldn't really happen since we catch inside the task,
-        // but just in case, log it and still move on
-        log.error("Unexpected error waiting for record to complete", e);
-      }
-
-      // Always commit the record (same as your original code)
-      committer.markProcessed(event);
-    }
-
-    // commit batch after all records done
-    committer.markBatchFinished();
-  }
+//  private void handleBatchSafelyExample(
+//      List<ChangeEvent<String, String>> events,
+//      DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
+//  ) throws InterruptedException {
+//
+//    // One task per event, each on its own virtual thread
+//    List<Future<Boolean>> futures = new ArrayList<>(events.size());
+//
+//    for (ChangeEvent<String, String> event : events) {
+//      String sourceRecordValue = event.value();
+//
+//      Future<Boolean> future = virtualThreadPerTaskExecutor.submit(() -> {
+//        try {
+//          // your existing logic
+//          readOutboxRecord(sourceRecordValue);
+//          return true;  // success
+//        } catch (Exception e) {
+//          // keep your logging behaviour
+//          log.error("Error processing record: {}", sourceRecordValue, e);
+//          //optional DLQ publish here
+//          return false; // failure, but we will still commit
+//        }
+//      });
+//
+//      futures.add(future);
+//    }
+//
+//    // Wait for all tasks to finish on the Debezium thread
+//    for (int i = 0; i < events.size(); i++) {
+//      ChangeEvent<String, String> event = events.get(i);
+//      Future<Boolean> future = futures.get(i);
+//
+//      try {
+//        // blocks on the virtual thread finishing
+//        future.get();
+//      } catch (ExecutionException e) {
+//        // shouldn't really happen since we catch inside the task,
+//        // but just in case, log it and still move on
+//        log.error("Unexpected error waiting for record to complete", e);
+//      }
+//
+//      // Always commit the record (same as your original code)
+//      committer.markProcessed(event);
+//    }
+//
+//    // commit batch after all records done
+//    committer.markBatchFinished();
+//  }
 
 }

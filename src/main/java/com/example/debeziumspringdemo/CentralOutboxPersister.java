@@ -1,5 +1,6 @@
 package com.example.debeziumspringdemo;
 
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -11,6 +12,9 @@ public class CentralOutboxPersister {
 
   public void save(CentralOutboxRecord outboxRecord) {
     centralOutboxRepository.save(outboxRecord);
+  }
+  public void saveAll(List<CentralOutboxRecord> outboxRecord) {
+    centralOutboxRepository.saveAll(outboxRecord);
   }
 
 }

@@ -4,3 +4,9 @@ spring:
   data:
     mongodb:
       uri: mongodb://admin:password@localhost:27017/central_outbox_db?authSource=admin
+  threads:
+    virtual:
+      enabled: true
+logging:
+  level:
+    root: warn
