@@ -21,4 +21,6 @@ public class CentralOutboxRecord {
   private String payload;
   @Indexed
   private Instant timestamp;
+  private String sourceDbName;
+  private String sourceCollectionName;
 }

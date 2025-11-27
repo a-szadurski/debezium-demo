@@ -92,6 +92,8 @@ public class DebeziumSourceEventListener {
         .aggregateId(aggregateid)
         .payload(payload)
         .timestamp(Instant.now())
+        .sourceDbName(db)
+        .sourceCollectionName(collection)
         .build();
 
     log.info("value = '{}'", sourceRecordValue);

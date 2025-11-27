@@ -34,7 +34,7 @@ public class DebeziumConnectorConfig {
         .with("max.batch.size", "500")
         .with("snapshot.mode", "initial")
 //        .with("filters.match.mode", "literal")
-        .with("database.include.list", "inventory")
+        .with("database.include.list", "inventory,inventory1,inventory2,inventory3,inventory4")
 //        .with("collection.include.list", "test.outbox")
         .build();
   }
