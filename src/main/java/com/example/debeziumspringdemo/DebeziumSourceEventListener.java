@@ -9,6 +9,7 @@ import io.debezium.engine.format.Json;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -105,4 +106,56 @@ public class DebeziumSourceEventListener {
       virtualThreadPerTaskExecutor.shutdown();
     }
   }
+
+
+  //todo AI suggestion - check this
+  private void handleBatchSafelyExample(
+      List<ChangeEvent<String, String>> events,
+      DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
+  ) throws InterruptedException {
+
+    // One task per event, each on its own virtual thread
+    List<Future<Boolean>> futures = new ArrayList<>(events.size());
+
+    for (ChangeEvent<String, String> event : events) {
+      String sourceRecordValue = event.value();
+
+      Future<Boolean> future = virtualThreadPerTaskExecutor.submit(() -> {
+        try {
+          // your existing logic
+          readOutboxRecord(sourceRecordValue);
+          return true;  // success
+        } catch (Exception e) {
+          // keep your logging behaviour
+          log.error("Error processing record: {}", sourceRecordValue, e);
+          //optional DLQ publish here
+          return false; // failure, but we will still commit
+        }
+      });
+
+      futures.add(future);
+    }
+
+    // Wait for all tasks to finish on the Debezium thread
+    for (int i = 0; i < events.size(); i++) {
+      ChangeEvent<String, String> event = events.get(i);
+      Future<Boolean> future = futures.get(i);
+
+      try {
+        // blocks on the virtual thread finishing
+        future.get();
+      } catch (ExecutionException e) {
+        // shouldn't really happen since we catch inside the task,
+        // but just in case, log it and still move on
+        log.error("Unexpected error waiting for record to complete", e);
+      }
+
+      // Always commit the record (same as your original code)
+      committer.markProcessed(event);
+    }
+
+    // commit batch after all records done
+    committer.markBatchFinished();
+  }
+
 }
