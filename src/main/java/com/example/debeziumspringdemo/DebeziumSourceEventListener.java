@@ -1,17 +1,18 @@
 package com.example.debeziumspringdemo;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.debezium.config.Configuration;
 import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
 import io.debezium.engine.format.Json;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ public class DebeziumSourceEventListener {
   private final DebeziumEngine<ChangeEvent<String, String>> debeziumEngine;
   private final CentralOutboxPersister centralOutboxPersister;
   private final ObjectMapper objectMapper;
+  private final ExecutorService virtualThreadPerTaskExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public DebeziumSourceEventListener(Configuration mongodbConnector, CentralOutboxPersister centralOutboxPersister) {
     this.centralOutboxPersister = centralOutboxPersister;
@@ -60,27 +62,23 @@ public class DebeziumSourceEventListener {
   }
 
   private void readOutboxRecord(String sourceRecordValue) throws Exception {
-    String aggregatetype = "";
-    String aggregateid = "";
-    String payload = "";
-    JsonNode root = objectMapper.readTree(sourceRecordValue);
-    JsonNode debeziumPayload = root.path("payload");
+    var root = objectMapper.readTree(sourceRecordValue);
+    var debeziumPayload = root.path("payload");
+    var source = debeziumPayload.path("source");
 
-    JsonNode source = debeziumPayload.path("source");
-
-    String db = source.path("db").asText();
-    String collection = source.path("collection").asText();
+    var db = source.path("db").asText();
+    var collection = source.path("collection").asText();
 
     log.info("DB = '{}', collection = '{}'", db, collection);
-    String after = debeziumPayload.path("after").asText(null);
+    var after = debeziumPayload.path("after").asText(null);
     log.info("after = {}", after);
-    JsonNode afterJson = objectMapper.readTree(after);
-    aggregatetype = afterJson.path("aggregatetype").asText(null);
-    aggregateid = afterJson.path("aggregateid").asText(null);
-    JsonNode payloadJson = afterJson.path("payload");
-    payload = payloadJson.toString();
+    var afterJson = objectMapper.readTree(after);
+    var aggregatetype = afterJson.path("aggregatetype").asText(null);
+    var aggregateid = afterJson.path("aggregateid").asText(null);
+    var payloadJson = afterJson.path("payload");
+    var payload = payloadJson.toString();
 
-    final CentralOutboxRecord outboxRecord = CentralOutboxRecord.builder()
+    final var outboxRecord = CentralOutboxRecord.builder()
         .aggregateType(aggregatetype)
         .aggregateId(aggregateid)
         .payload(payload)
@@ -102,8 +100,9 @@ public class DebeziumSourceEventListener {
 
   @PreDestroy
   private void stop() throws IOException {
-    if (this.debeziumEngine != null) {
-      this.debeziumEngine.close();
+    if (debeziumEngine != null) {
+      debeziumEngine.close();
+      virtualThreadPerTaskExecutor.shutdown();
     }
   }
 }
