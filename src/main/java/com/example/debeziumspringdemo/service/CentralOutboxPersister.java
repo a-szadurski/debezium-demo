@@ -1,5 +1,7 @@
-package com.example.debeziumspringdemo;
+package com.example.debeziumspringdemo.service;
 
+import com.example.debeziumspringdemo.domain.CentralOutboxRecord;
+import com.example.debeziumspringdemo.domain.CentralOutboxRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

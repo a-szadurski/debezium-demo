@@ -1,7 +1,5 @@
 package com.example.debeziumspringdemo.configuration;
 
-import java.io.IOException;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @RequiredArgsConstructor
-public class DebeziumConnectorConfig {
+public class DebeziumConnectorConfiguration {
 
   private final DebeziumConfigurationProperties debeziumConfigurationProperties;
 

@@ -1,4 +1,4 @@
-package com.example.debeziumspringdemo;
+package com.example.debeziumspringdemo.domain;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
 

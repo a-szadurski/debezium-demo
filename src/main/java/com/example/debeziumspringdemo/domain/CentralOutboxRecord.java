@@ -1,4 +1,4 @@
-package com.example.debeziumspringdemo;
+package com.example.debeziumspringdemo.domain;
 
 import java.time.Instant;
 import lombok.Builder;

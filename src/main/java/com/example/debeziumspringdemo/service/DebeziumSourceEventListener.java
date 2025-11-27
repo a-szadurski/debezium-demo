@@ -1,17 +1,16 @@
-package com.example.debeziumspringdemo;
+package com.example.debeziumspringdemo.service;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.example.debeziumspringdemo.domain.CentralOutboxRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.debezium.config.Configuration;
 import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
+import io.debezium.engine.DebeziumEngine.RecordCommitter;
 import io.debezium.engine.format.Json;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import javax.annotation.PostConstruct;
@@ -28,9 +27,11 @@ public class DebeziumSourceEventListener {
   private final CentralOutboxPersister centralOutboxPersister;
   private final ObjectMapper objectMapper;
 
-  public DebeziumSourceEventListener(Configuration mongodbConnector, CentralOutboxPersister centralOutboxPersister) {
+  public DebeziumSourceEventListener(Configuration mongodbConnector, CentralOutboxPersister centralOutboxPersister, ObjectMapper objectMapper) {
     this.centralOutboxPersister = centralOutboxPersister;
+    this.objectMapper = objectMapper;
     this.executor = Executors.newSingleThreadExecutor();
+
     this.debeziumEngine = DebeziumEngine.create(Json.class)
         .using(mongodbConnector.asProperties())
         .notifying(this::handleBatchSafely)
@@ -41,33 +42,30 @@ public class DebeziumSourceEventListener {
           }
         })
         .build();
-    objectMapper = new ObjectMapper();
-    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
   }
 
-  private void handleBatchSafely(
-      List<ChangeEvent<String, String>> events,
-      DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer
-  ) throws InterruptedException {
+  private void handleBatchSafely(List<ChangeEvent<String, String>> events, RecordCommitter<ChangeEvent<String, String>> committer) throws InterruptedException {
 
     List<CentralOutboxRecord> outboxRecords = new LinkedList<>();
 
     for (ChangeEvent<String, String> event : events) {
-      String sourceRecordValue = event.value();
-
+      var sourceRecordValue = event.value();
       try {
         outboxRecords.add(readOutboxRecord(sourceRecordValue));
-
-        committer.markProcessed(event);
       } catch (Exception e) {
         log.error("Error processing record: {}", sourceRecordValue, e);
-        //save to some fallback table/topic, also catch any errors&handle
-        //does fallback error require stopping the server?
         committer.markProcessed(event);
       }
     }
-    centralOutboxPersister.saveAll(outboxRecords);
-    committer.markBatchFinished();
+    try {
+      centralOutboxPersister.saveAll(outboxRecords);
+      for (ChangeEvent<String, String> event : events) {
+        committer.markProcessed(event);
+      }
+      committer.markBatchFinished();
+    } catch (Exception e) {
+      log.error("Error saving central outbox records", e);
+    }
   }
 
   private CentralOutboxRecord readOutboxRecord(String sourceRecordValue) throws Exception {
@@ -98,11 +96,7 @@ public class DebeziumSourceEventListener {
 
     log.info("value = '{}'", sourceRecordValue);
     log.info("outboxRecord = '{}'", outboxRecord);
-//    if (outboxRecord != null && outboxRecord.getAggregateType() != null) {
-      return outboxRecord;
-//    } else {
-//      throw new Exception("Unable to save outbox record");
-//    }
+    return outboxRecord;
   }
 
   @PostConstruct
@@ -161,7 +155,6 @@ public class DebeziumSourceEventListener {
       // You may want retry/backoff logic or let the engine be restarted.
     }
   }
-
 
   //todo AI suggestion - check this
 //  private void handleBatchSafelyExample(
