@@ -10,3 +10,21 @@ spring:
 logging:
   level:
     root: warn
+debezium:
+  properties:
+# based off https://debezium.io/documentation/reference/2.1/connectors/mongodb.html#mongodb-connector-properties
+    name: debezium-mongo-demo
+    connector.class: io.debezium.connector.mongodb.MongoDbConnector
+    offset.storage: org.apache.kafka.connect.storage.FileOffsetBackingStore
+    offset.storage.file.filename: /tmp/debezium-offsets.dat
+    offset.flush.interval.ms: 10000
+    mongodb.connection.string: mongodb://admin:password@localhost:27017/?replicaSet=e77b444b513b&authSource=admin
+    topic.prefix: debezium-mongo-demo
+    mongodb.user: admin
+    mongodb.password: password
+    snapshot.delay.ms: 100
+    errors.log.include.messages: true
+    skipped.operations: u,d,t
+    max.batch.size: 500
+    snapshot.mode: initial
+    database.include.list: inventory,inventory1,inventory2,inventory3,inventory4
