@@ -29,7 +29,7 @@ public class DebeziumEngineRunner {
 
   private DebeziumEngine<ChangeEvent<String, String>> debeziumEngine;
 
-  private static final int MAX_ENGINE_ERROR_RESTARTS = 5;
+  private static final int MAX_ENGINE_ERROR_RESTARTS = 3;
   private static final long RESTART_DELAY_MS = 5_000L;
   private final AtomicInteger consecutiveErrorRestarts = new AtomicInteger(0);
 

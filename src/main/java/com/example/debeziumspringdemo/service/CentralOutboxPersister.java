@@ -4,7 +4,6 @@ import com.example.debeziumspringdemo.domain.CentralOutboxRecord;
 import com.example.debeziumspringdemo.domain.CentralOutboxRepository;
 import java.util.Collection;
 import lombok.RequiredArgsConstructor;
-import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
@@ -16,8 +15,6 @@ public class CentralOutboxPersister {
   private final CentralOutboxRepository centralOutboxRepository;
 
   @Retryable(
-      maxAttempts = 5,
-      backoff = @Backoff(multiplier = 2.0),
       retryFor = {Exception.class},
       recover = "recover"
   )

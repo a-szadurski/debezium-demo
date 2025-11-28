@@ -45,9 +45,9 @@ public class DebeziumEventHandler {
       }
       committer.markBatchFinished();
       //and when it fails completely, recover throws some exception
-    } catch (RuntimeException fatal) {
+    } catch (Exception fatal) {
       log.error("Fatal rror saving central outbox records", fatal);
-      throw fatal; //todo add real exceptions
+      throw new RuntimeException(fatal); //todo add real exceptions
 
     }
   }
