@@ -9,7 +9,7 @@ spring:
       enabled: true
 logging:
   level:
-    root: warn
+    root: info
 debezium:
   properties:
 # based off https://debezium.io/documentation/reference/2.1/connectors/mongodb.html#mongodb-connector-properties
